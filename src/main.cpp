@@ -2,6 +2,7 @@
 #include <math.h>
 #include <uWS/uWS.h>
 #include <chrono>
+#include <algorithm>
 #include <iostream>
 #include <thread>
 #include <vector>
@@ -9,6 +10,7 @@
 #include "Eigen-3.3/Eigen/QR"
 #include "json.hpp"
 #include "spline.h"
+#include "vehicle.h"
 
 using namespace std;
 
@@ -35,10 +37,12 @@ string hasData(string s) {
   return "";
 }
 
+
 double distance(double x1, double y1, double x2, double y2)
 {
 	return sqrt((x2-x1)*(x2-x1)+(y2-y1)*(y2-y1));
 }
+
 int ClosestWaypoint(double x, double y, const vector<double> &maps_x, const vector<double> &maps_y)
 {
 
@@ -167,6 +171,8 @@ vector<double> getXY(double s, double d, const vector<double> &maps_s, const vec
 int main() {
   uWS::Hub h;
 
+  Vehicle ego = Vehicle();
+
   // Load up map values for waypoint's x,y,s and d normalized normal vectors
   vector<double> map_waypoints_x;
   vector<double> map_waypoints_y;
@@ -220,6 +226,7 @@ int main() {
         
         if (event == "telemetry") 
         {
+          //cout << ego.num_points << endl;
           // j[1] is the data JSON object
           
         	// Main car's localization Data
@@ -229,44 +236,355 @@ int main() {
           	double car_d = j[1]["d"];
           	double car_yaw = j[1]["yaw"];
           	double car_speed = j[1]["speed"];
+        	  
 
-          	// Previous path data given to the Planner
+        	  // Previous path data given to the Planner
           	auto previous_path_x = j[1]["previous_path_x"];
           	auto previous_path_y = j[1]["previous_path_y"];
-          	// Previous path's end s and d values 
+
+        	  //Previous path's end s and d values 
           	double end_path_s = j[1]["end_path_s"];
           	double end_path_d = j[1]["end_path_d"];
+
 
           	// Sensor Fusion Data, a list of all other cars on the same side of the road.
           	auto sensor_fusion = j[1]["sensor_fusion"];
           	//Sensor Fusion Format : [ id, x, y, vx, vy, s, d]
 
-          	// PROJECT CODE BEGINS:
 
+          	// PROJECT CODE BEGINS:		
+
+          	vector<double> next_x_vals;
+          	vector<double> next_y_vals;
+
+            bool displayPoints = false;
+
+
+           
+
+          	//Points to represent the last and second last points in the previous path
+          	double ref_x;
+          	double ref_y;
+          	double ref_x_prev;
+          	double ref_y_prev;
+            double ref_yaw;          
+
+            uint prev_size = previous_path_x.size();
+            double speed_limit = 47; //speed limit in mph
+            uint total_points = 50;          	
+            uint points_to_add; // Number of points to be added to the path         	
+            uint keep_points = prev_size - 10;  //Number of points to include from previous path
+
+            uint ego_lane = 1;
+  	
+          	
+            double v_adj = 2.0; //Speed to adjust each iteration by
+
+          	bool too_close = false;
+            
+
+            double ref_v = car_speed;
+
+          	
+            cout << "\n\nPrevious Size Remainder = " << prev_size << endl;
+            cout << "Current Ego Position  = [ " << car_x  << " , " << car_y << " ]" <<endl;
+            cout << "Current Ego Speed  = " << car_speed << endl;
+
+
+
+            
+            double id,x,y,vx,vy,sf,dist;
+         		for ( int i = 0; i <sensor_fusion.size();i++)
+         		{         			
+         			dist = sensor_fusion[i][6];
+         			sf = sensor_fusion[i][5];
+         			id = sensor_fusion[i][0];
+         			//cout << "Checking Vehicle "<< sensor_fusion[i][0] << "."<< endl;
+         			//Determine if vehicle is in ego lane
+         			if(dist <(4+ 4*ego_lane) && dist > (4*ego_lane))
+         			{
+	         			
+	         			double vx = sensor_fusion[i][3];
+	         			double vy = sensor_fusion[i][4];
+	         			double check_speed = sqrt(vx*vx + vy*vy);
+
+	         			if ( abs(sf - car_s < 30) && (sf > car_s))
+	         			{
+	         				too_close = true;
+                  cout << "Found a vehicle too close!!!!  = " << car_speed << endl;
+	         			}	         			
+         			}
+         		}
+
+            if(too_close)
+            {
+              ref_v -= v_adj;
+              cout << "Decreasing Speed to "<< ref_v << "." << endl;
+            }
+            else if(ref_v < speed_limit)
+            {
+              ref_v += v_adj;
+              cout << "Increasing Speed to "<< ref_v << "." << endl;
+            }
+
+
+         		/* Generate Spline for Path*/
+
+          	vector<double> ptsy;
+          	vector<double> ptsx;
+
+            double spline_starting_x;
+            double spline_starting_y;
+
+
+          	// If previous size is almost empty, estimate the previous
+          	// 2 way points based on vehicle orientation
+          	if (prev_size <2)
+          	{
+              ref_yaw = deg2rad(car_yaw);
+          		double prev_car_x = car_x - cos(ref_yaw);
+          		double prev_car_y = car_y - sin(ref_yaw);
+
+          		ptsx.push_back(prev_car_x);
+          		ptsx.push_back(car_x);
+
+          		ptsy.push_back(prev_car_y);
+          		ptsy.push_back(car_y);
+
+              spline_starting_x = prev_car_x;
+              spline_starting_y = prev_car_y;
+
+              ref_x = car_x;
+              ref_y = car_y;       
+          	}           
+
+
+            else //Use the previous path's ending points as the starting point
+          	{
+          		//redefine reference state as the end of the previous point array
+          		ref_x = previous_path_x[keep_points-1];
+          		ref_y = previous_path_y[keep_points-1];
+          		ref_x_prev = previous_path_x[keep_points-2];
+          		ref_y_prev = previous_path_y[keep_points-2];
+
+              spline_starting_x = ref_x_prev;
+              spline_starting_y = ref_y_prev;
+
+          		ref_yaw = atan2(ref_y - ref_y_prev, ref_x - ref_x_prev);
+
+          		ptsx.push_back(ref_x_prev);
+          		ptsx.push_back(ref_x);
+
+          		ptsy.push_back(ref_y_prev);
+          		ptsy.push_back(ref_y);
+          	}
+
+          	//Get waypoints up the road to generate spline
+          	vector<double> next_wp0 = getXY(car_s + 30, 2+4*ego_lane , map_waypoints_s, map_waypoints_x, map_waypoints_y);
+          	vector<double> next_wp1 = getXY(car_s + 60, 2+4*ego_lane , map_waypoints_s, map_waypoints_x, map_waypoints_y);
+          	vector<double> next_wp2 = getXY(car_s + 90, 2+4*ego_lane , map_waypoints_s, map_waypoints_x, map_waypoints_y);
+
+          	ptsx.push_back(next_wp0[0]);
+          	ptsx.push_back(next_wp1[0]);
+          	ptsx.push_back(next_wp2[0]);
+
+          	ptsy.push_back(next_wp0[1]);
+          	ptsy.push_back(next_wp1[1]);
+          	ptsy.push_back(next_wp2[1]);
+
+            if(displayPoints){
+              //Print Global Spline Waypoints
+              cout << "Global Spline Waypoints: " << endl;
+              for (int i = 0 ; i < ptsx.size(); i++)
+              {
+                //print Global Spline Waypoints :
+                cout << "\t[ " << ptsx[i] << "," << ptsy[i] << " ]" << endl;
+              }
+              cout << endl;
+            }
+          	// Transform to local coordinates by setting the origin to the start of the spline path
+          	for (int i = 0 ; i < ptsx.size(); i++)
+          	{
+          		double shift_x = ptsx[i] - spline_starting_x;
+          		double shift_y = ptsy[i] - spline_starting_y;
+
+          		ptsx[i] = (shift_x * cos(0 - ref_yaw) - shift_y * sin(0- ref_yaw));
+          		ptsy[i] = (shift_x * sin(0 - ref_yaw) + shift_y * cos(0- ref_yaw)); 
+          	}
+            
+            
+            if(displayPoints){
+              //Print Local Spline Waypoints
+              cout << "Local Spline Waypoints: " <<endl;
+              for (int i = 0 ; i < ptsx.size(); i++)
+              {
+                //print spline waypoints Global:
+                cout << "\t[" << ptsx[i] << "," << ptsy[i] << "]" << endl;
+              }
+              cout << endl;
+            }
+
+          	//Create spline that maps to lane path
+          	tk::spline s;
+          	s.set_points(ptsx,ptsy);
+
+
+
+
+          	/* Write to the output points */
+
+
+            //Figure out how many new points to add :
+            points_to_add = total_points - min(keep_points,prev_size);
+
+
+        		// Push the old values if there are any, defined by keep_points
+        		int i;  
+            cout << "\nAdding " << min(prev_size,keep_points) <<" points from previous path:" <<endl;
+
+          	for (i = 0; i < min(prev_size,keep_points); i++)
+          	{
+        			next_x_vals.push_back(previous_path_x[i]);
+							next_y_vals.push_back(previous_path_y[i]);
+             if(displayPoints){cout << "\t Adding Previous Point = [" << previous_path_x[i] << " , " << previous_path_y[i] <<"]" << endl;}
+          	}
+            cout << "Done Adding points from previous path.\n" <<endl;  
+
+
+          	//Generate new points:
+
+          	double local_x_coord = 0;
+          	double local_y_coord = 0;
+            double global_x_coord = 0;
+            double global_y_coord = 0;
+
+
+          	//Compute longitudinal increment based on reference speed & simulator physics
+          	double x_inc = ref_v*0.02/(2.237);
+          	
+            cout << "\nGenerating "<<  total_points - min(keep_points,prev_size)  <<  " Points for Future Vehicle Path:" <<endl;
+
+          	for (i = 0; i < total_points - min(keep_points,prev_size); i ++)
+        		{
+        			//Local (x,y) coordinate for point
+        			local_x_coord += x_inc;
+        			local_y_coord = s(local_x_coord); //Generate spline value
+              if(displayPoints){cout << "\tLocal = [" << local_x_coord <<" , " << local_y_coord <<"] , ";}
+
+        			//Convert local coordinates back to global:
+        			double x_ref = local_x_coord;
+        			double y_ref = local_y_coord;
+
+        			global_x_coord = (x_ref * cos(ref_yaw) - y_ref * sin(ref_yaw));
+        			global_y_coord = (x_ref * sin(ref_yaw) + y_ref*cos(ref_yaw));
+
+        			global_x_coord += ref_x;
+        			global_y_coord += ref_y;
+
+        			next_x_vals.push_back(global_x_coord);
+							next_y_vals.push_back(global_y_coord);  
+              		
+              if(displayPoints){cout << "Global = [" << global_x_coord <<" , " << global_y_coord <<"] " <<  endl;}
+          	}
+             cout << "Done Generating New Points.\n" <<endl;  
+          	
+          	json msgJson;
+          	msgJson["next_x"] = next_x_vals;
+          	msgJson["next_y"] = next_y_vals;
+
+          	auto msg = "42[\"control\","+ msgJson.dump()+"]";
+
+          	//this_thread::sleep_for(chrono::milliseconds(1000));
+          	ws.send(msg.data(), msg.length(), uWS::OpCode::TEXT);
+          }
+	      else
+	      {
+	        // Manual driving
+	        std::string msg = "42[\"manual\",{}]";
+	        ws.send(msg.data(), msg.length(), uWS::OpCode::TEXT);
+	      }
+	    }
+    }
+  });
+
+  // We don't need this since we're not using HTTP but if it's removed the
+  // program
+  // doesn't compile :-(
+  h.onHttpRequest([](uWS::HttpResponse *res, uWS::HttpRequest req, char *data,
+                     size_t, size_t) {
+    const std::string s = "<h1>Hello world!</h1>";
+    if (req.getUrl().valueLength == 1) {
+      res->end(s.data(), s.length());
+    } else {
+      // i guess this should be done more gracefully?
+      res->end(nullptr, 0);
+    }
+  });
+
+  h.onConnection([&h](uWS::WebSocket<uWS::SERVER> ws, uWS::HttpRequest req) {
+    std::cout << "Connected!!!" << std::endl;
+  });
+
+  h.onDisconnection([&h](uWS::WebSocket<uWS::SERVER> ws, int code,
+                         char *message, size_t length) {
+    ws.close();
+    std::cout << "Disconnected" << std::endl;
+  });
+
+  int port = 4567;
+  if (h.listen(port)) {
+    std::cout << "Listening to port " << port << std::endl;
+  } else {
+    std::cerr << "Failed to listen to port" << std::endl;
+    return -1;
+  }
+  h.run();
+}
+
+
+          	/*
           	uint lane = 1; //lane 0 = left, 1 = center, 2 = right
-          	uint ref_v = 50;
+          	double ref_v = 50; // reference velocity
+          	uint max_speed = 48;
           	uint num_points = 50;	
+          	bool too_close = false;
 
           	// Collision Avoidance Logic:
-          	uint decision = 0;
-          	if(decision == 1)
-          	{
-          	} // lane change left
-         		else if (decision == 2)
-         		{
-         		} // stay in lane & slow
-         		else if (decision == 3)
-         		{
-         		} //lane change right
 
          		int id,x,y,vx,vy,sf,dist;
-         		cout << "id's val's = ";
+         		//cout << "id's val's = ";
          		for ( int i = 0; i <sensor_fusion.size();i++)
          		{
-         			dist = sensor_fusion[i][0];
-         			cout << dist << ", ";
+
+         			double d = sensor_fusion[i][6];
+
+
+         			//Determine if vehicle is in ego lane
+         			if(d <(4+ 4*lane) && d > (4*lane))
+         			{
+	         			double vx = sensor_fusion[i][3];
+	         			double vy = sensor_fusion[i][4];
+	         			double check_speed = sqrt(vx*vx + vy*vy);
+	         			double check_s = sensor_fusion[i][5];
+
+	         			if (check_s - car_s < 30) 
+	         			{
+	         				too_close = true;
+
+	         			}
+         			}
          		}
-         		cout << " .\n";
+
+         		if(false)
+         		{
+         			ref_v -= .224;
+         			cout << "Decreasing Speed!\n";
+         		}
+         		else if (ref_v < max_speed)
+         		{
+         			ref_v+=0.224;
+         			cout << "Increasing Speed!\n";
+         		}
 
 
           	vector<double> ptsx;
@@ -343,102 +661,29 @@ int main() {
           	s.set_points(ptsx,ptsy);
 
 
-          	vector<double> next_x_vals;
-          	vector<double> next_y_vals;
 
+						
+
+						int previous_size = 0;
           	//Re-use left over points that were not executed last time step
-          	for (int i = 0; i < previous_path_x.size();i++)
+          	for (int i = 0; i < previous_size;i++)
           	{
           		next_x_vals.push_back(previous_path_x[i]);
           		next_y_vals.push_back(previous_path_y[i]);
           	}
-          	//
-
-
+          	
           	//use a linear approximation to genereate spline x-axis:
           	double target_x = 30 ;
           	double target_y = s(target_x);
           	double target_dist = sqrt((target_x*target_x + target_y *target_y));
 
           	//Compute spacing of points required to acheive target speed
+
           	double N = (target_dist*2.24/(0.02*ref_v));
-          	double x_inc = target_x / N;
+          	//double x_inc = target_x / N;
+          	double x_inc = ref_v*0.02/(2.237);
           	double x_add = 0;
           	int i;
           	//Add on new points to the end
-          	for ( i = 0 ; i < (num_points - previous_path_x.size()); i++)
-          	{
-          		double x_point = x_add + x_inc;
-          		double y_point = s(x_point);
 
-          		x_add = x_point;
-
-          		//Go back to global coordinates:
-          		double x_ref = x_point;
-          		double y_ref = y_point;
-
-          		x_point = (x_ref * cos(ref_yaw) - y_ref*sin(ref_yaw));
-          		y_point = (x_ref * sin(ref_yaw) + y_ref*cos(ref_yaw));
-
-
-          		//Ensure points are added to end using reference x
-          		x_point += ref_x;
-          		y_point += ref_y;
-
-          		next_x_vals.push_back(x_point);
-          		next_y_vals.push_back(y_point);
-          	}
-          	//cout << "Old = " << previous_path_x.size()<< ". New =  "<<i<<"\n";
-
-          	json msgJson;
-          	msgJson["next_x"] = next_x_vals;
-          	msgJson["next_y"] = next_y_vals;
-
-          	auto msg = "42[\"control\","+ msgJson.dump()+"]";
-
-          	//this_thread::sleep_for(chrono::milliseconds(1000));
-          	ws.send(msg.data(), msg.length(), uWS::OpCode::TEXT);
-          }
-	      else
-	      {
-	        // Manual driving
-	        std::string msg = "42[\"manual\",{}]";
-	        ws.send(msg.data(), msg.length(), uWS::OpCode::TEXT);
-	      }
-	    }
-    }
-  });
-
-  // We don't need this since we're not using HTTP but if it's removed the
-  // program
-  // doesn't compile :-(
-  h.onHttpRequest([](uWS::HttpResponse *res, uWS::HttpRequest req, char *data,
-                     size_t, size_t) {
-    const std::string s = "<h1>Hello world!</h1>";
-    if (req.getUrl().valueLength == 1) {
-      res->end(s.data(), s.length());
-    } else {
-      // i guess this should be done more gracefully?
-      res->end(nullptr, 0);
-    }
-  });
-
-  h.onConnection([&h](uWS::WebSocket<uWS::SERVER> ws, uWS::HttpRequest req) {
-    std::cout << "Connected!!!" << std::endl;
-  });
-
-  h.onDisconnection([&h](uWS::WebSocket<uWS::SERVER> ws, int code,
-                         char *message, size_t length) {
-    ws.close();
-    std::cout << "Disconnected" << std::endl;
-  });
-
-  int port = 4567;
-  if (h.listen(port)) {
-    std::cout << "Listening to port " << port << std::endl;
-  } else {
-    std::cerr << "Failed to listen to port" << std::endl;
-    return -1;
-  }
-  h.run();
-}
+*/			

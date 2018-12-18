@@ -837,6 +837,8 @@ uWS/uWS.h
 -
 chrono
 -
+algorithm
+-
 iostream
 -
 thread
@@ -851,6 +853,8 @@ json.hpp
 /home/james/Documents/CarNDT3/CarND-PathPlanning/src/json.hpp
 spline.h
 /home/james/Documents/CarNDT3/CarND-PathPlanning/src/spline.h
+vehicle.h
+/home/james/Documents/CarNDT3/CarND-PathPlanning/src/vehicle.h
 
 /home/james/Documents/CarNDT3/CarND-PathPlanning/src/spline.h
 cstdio
@@ -860,5 +864,15 @@ cassert
 vector
 -
 algorithm
+-
+
+/home/james/Documents/CarNDT3/CarND-PathPlanning/src/vehicle.cpp
+vehicle.h
+/home/james/Documents/CarNDT3/CarND-PathPlanning/src/vehicle.h
+
+/home/james/Documents/CarNDT3/CarND-PathPlanning/src/vehicle.h
+iostream
+-
+math.h
 -
 
