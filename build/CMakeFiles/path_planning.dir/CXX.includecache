@@ -851,8 +851,6 @@ Eigen-3.3/Eigen/QR
 /home/james/Documents/CarNDT3/CarND-PathPlanning/src/Eigen-3.3/Eigen/QR
 json.hpp
 /home/james/Documents/CarNDT3/CarND-PathPlanning/src/json.hpp
-spline.h
-/home/james/Documents/CarNDT3/CarND-PathPlanning/src/spline.h
 vehicle.h
 /home/james/Documents/CarNDT3/CarND-PathPlanning/src/vehicle.h
 
@@ -869,10 +867,30 @@ algorithm
 /home/james/Documents/CarNDT3/CarND-PathPlanning/src/vehicle.cpp
 vehicle.h
 /home/james/Documents/CarNDT3/CarND-PathPlanning/src/vehicle.h
+vector
+-
+algorithm
+-
+iostream
+-
+spline.h
+/home/james/Documents/CarNDT3/CarND-PathPlanning/src/spline.h
+math.h
+-
+fstream
+-
+string
+-
 
 /home/james/Documents/CarNDT3/CarND-PathPlanning/src/vehicle.h
 iostream
 -
 math.h
 -
+vector
+-
+algorithm
+-
+spline.h
+/home/james/Documents/CarNDT3/CarND-PathPlanning/src/spline.h
 

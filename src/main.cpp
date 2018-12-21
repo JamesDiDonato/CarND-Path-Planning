@@ -9,7 +9,6 @@
 #include "Eigen-3.3/Eigen/Core"
 #include "Eigen-3.3/Eigen/QR"
 #include "json.hpp"
-#include "spline.h"
 #include "vehicle.h"
 
 using namespace std;
@@ -19,8 +18,7 @@ using json = nlohmann::json;
 
 // For converting back and forth between radians and degrees.
 constexpr double pi() { return M_PI; }
-double deg2rad(double x) { return x * pi() / 180; }
-double rad2deg(double x) { return x * 180 / pi(); }
+
 
 // Checks if the SocketIO event has JSON data.
 // If there is data the JSON object in string format will be returned,
@@ -140,33 +138,34 @@ vector<double> getFrenet(double x, double y, double theta, const vector<double> 
 
 }
 
-// Transform from Frenet s,d coordinates to Cartesian x,y
-vector<double> getXY(double s, double d, const vector<double> &maps_s, const vector<double> &maps_x, const vector<double> &maps_y)
-{
-	int prev_wp = -1;
+// // Transform from Frenet s,d coordinates to Cartesian x,y
+// vector<double> getXY(double s, double d, const vector<double> &maps_s, const vector<double> &maps_x, const vector<double> &maps_y)
+// {
+//   int prev_wp = -1;
 
-	while(s > maps_s[prev_wp+1] && (prev_wp < (int)(maps_s.size()-1) ))
-	{
-		prev_wp++;
-	}
+//   while(s > maps_s[prev_wp+1] && (prev_wp < (int)(maps_s.size()-1) ))
+//   {
+//     prev_wp++;
+//   }
 
-	int wp2 = (prev_wp+1)%maps_x.size();
+//   int wp2 = (prev_wp+1)%maps_x.size();
 
-	double heading = atan2((maps_y[wp2]-maps_y[prev_wp]),(maps_x[wp2]-maps_x[prev_wp]));
-	// the x,y,s along the segment
-	double seg_s = (s-maps_s[prev_wp]);
+//   double heading = atan2((maps_y[wp2]-maps_y[prev_wp]),(maps_x[wp2]-maps_x[prev_wp]));
+//   // the x,y,s along the segment
+//   double seg_s = (s-maps_s[prev_wp]);
 
-	double seg_x = maps_x[prev_wp]+seg_s*cos(heading);
-	double seg_y = maps_y[prev_wp]+seg_s*sin(heading);
+//   double seg_x = maps_x[prev_wp]+seg_s*cos(heading);
+//   double seg_y = maps_y[prev_wp]+seg_s*sin(heading);
 
-	double perp_heading = heading-pi()/2;
+//   double perp_heading = heading-pi()/2;
 
-	double x = seg_x + d*cos(perp_heading);
-	double y = seg_y + d*sin(perp_heading);
+//   double x = seg_x + d*cos(perp_heading);
+//   double y = seg_y + d*sin(perp_heading);
 
-	return {x,y};
+//   return {x,y};
 
-}
+// }
+
 
 int main() {
   uWS::Hub h;
@@ -205,9 +204,13 @@ int main() {
   	map_waypoints_s.push_back(s);
   	map_waypoints_dx.push_back(d_x);
   	map_waypoints_dy.push_back(d_y);
+
+    ego.map_waypoints_x.push_back(x);
+    ego.map_waypoints_y.push_back(y);
+    ego.map_waypoints_s.push_back(s);
   }
 
-  h.onMessage([&map_waypoints_x,&map_waypoints_y,&map_waypoints_s,&map_waypoints_dx,&map_waypoints_dy](uWS::WebSocket<uWS::SERVER> ws, char *data, size_t length,
+  h.onMessage([&map_waypoints_x,&map_waypoints_y,&map_waypoints_s,&map_waypoints_dx,&map_waypoints_dy,&ego](uWS::WebSocket<uWS::SERVER> ws, char *data, size_t length,
                      uWS::OpCode opCode) {
     // "42" at the start of the message means there's a websocket message event.
     // The 4 signifies a websocket message
@@ -251,246 +254,283 @@ int main() {
           	auto sensor_fusion = j[1]["sensor_fusion"];
           	//Sensor Fusion Format : [ id, x, y, vx, vy, s, d]
 
+            cout << "***** Start of Iteration*****" <<endl;  
 
-          	// PROJECT CODE BEGINS:		
+            // PROJECT CODE BEGINS: 
 
-          	vector<double> next_x_vals;
-          	vector<double> next_y_vals;
+            //Update Ego Vehicle Object from simulator:
+            ego.x = car_x;
+            ego.y = car_y;
+            ego.s = car_s;
+            ego.d = car_d;
+            ego.yaw = car_yaw;
+            ego.speed = car_speed;
+            ego.prev_size = previous_path_x.size();
+            ego.prev_x_vals = previous_path_x.get<vector<double>>();
+            ego.prev_y_vals = previous_path_y.get<vector<double>>();
+            ego.sensor_fusion = sensor_fusion.get<vector<vector<double>>>();
 
-            bool displayPoints = false;
+
+            ego.GetSuccessorStates();
 
 
-           
 
-          	//Points to represent the last and second last points in the previous path
-          	double ref_x;
-          	double ref_y;
-          	double ref_x_prev;
-          	double ref_y_prev;
-            double ref_yaw;          
 
-            uint prev_size = previous_path_x.size();
-            double speed_limit = 47; //speed limit in mph
-            uint total_points = 50;          	
-            uint points_to_add; // Number of points to be added to the path         	
-            uint keep_points = prev_size - 10;  //Number of points to include from previous path
+            ego.StateTransition();
 
-            uint ego_lane = 1;
-  	
-          	
-            double v_adj = 2.0; //Speed to adjust each iteration by
+            ego.UpdateSpeed();
 
-          	bool too_close = false;
+            ego.GenerateTrajectory();
+
+
+            json msgJson;
+            msgJson["next_x"] = ego.next_x_vals;
+            msgJson["next_y"] = ego.next_y_vals;
             
+            cout << "\n***** End of Iteration*****\n" <<endl;  
+            
+           //  // Old Code (pre Vehicle object commit)
+            
+          	
 
-            double ref_v = car_speed;
+           //  vector<double> next_x_vals;
+           //  vector<double> next_y_vals;
+
+           //  bool displayPoints = false;  // whether to dislpay the calculated points or not.
+
+
+
+           //  //Points to represent the last and second last points from the previous path
+           //  double ref_x;
+           //  double ref_y;
+           //  double ref_x_prev;
+           //  double ref_y_prev;
+           //  double ref_yaw;          
+
+           //  uint prev_size = previous_path_x.size();
+           //  double speed_limit = 47; //speed limit in mph
+           //  uint total_points = 50;                  
+           //  uint keep_points = prev_size - 10;  //Number of points to include from previous path
+
+
+           //  uint ego_lane = 1;
+
+
+           //  double v_adj = 2.0; //Speed to adjust each iteration by
+
+           //  bool too_close = false;
+
+
+           //  double ref_v = car_speed;
+
+
+
 
           	
-            cout << "\n\nPrevious Size Remainder = " << prev_size << endl;
-            cout << "Current Ego Position  = [ " << car_x  << " , " << car_y << " ]" <<endl;
-            cout << "Current Ego Speed  = " << car_speed << endl;
+           //  cout << "\n\nPrevious Size Remainder = " << prev_size << endl;
+           //  cout << "Current Ego Position  = [ " << car_x  << " , " << car_y << " ]" <<endl;
+           //  cout << "Current Ego Speed  = " << car_speed << endl;
 
 
 
             
-            double id,x,y,vx,vy,sf,dist;
-         		for ( int i = 0; i <sensor_fusion.size();i++)
-         		{         			
-         			dist = sensor_fusion[i][6];
-         			sf = sensor_fusion[i][5];
-         			id = sensor_fusion[i][0];
-         			//cout << "Checking Vehicle "<< sensor_fusion[i][0] << "."<< endl;
-         			//Determine if vehicle is in ego lane
-         			if(dist <(4+ 4*ego_lane) && dist > (4*ego_lane))
-         			{
+           //  double id,x,y,vx,vy,sf,dist;
+         		// for ( int i = 0; i <sensor_fusion.size();i++)
+         		// {         			
+         		// 	dist = sensor_fusion[i][6];
+         		// 	sf = sensor_fusion[i][5];
+         		// 	id = sensor_fusion[i][0];
+         		// 	//cout << "Checking Vehicle "<< sensor_fusion[i][0] << "."<< endl;
+         		// 	//Determine if vehicle is in ego lane
+         		// 	if(dist <(4+ 4*ego_lane) && dist > (4*ego_lane))
+         		// 	{
 	         			
-	         			double vx = sensor_fusion[i][3];
-	         			double vy = sensor_fusion[i][4];
-	         			double check_speed = sqrt(vx*vx + vy*vy);
+	         	// 		double vx = sensor_fusion[i][3];
+	         	// 		double vy = sensor_fusion[i][4];
+	         	// 		double check_speed = sqrt(vx*vx + vy*vy);
 
-	         			if ( abs(sf - car_s < 30) && (sf > car_s))
-	         			{
-	         				too_close = true;
-                  cout << "Found a vehicle too close!!!!  = " << car_speed << endl;
-	         			}	         			
-         			}
-         		}
+	         	// 		if ( abs(sf - car_s < 30) && (sf > car_s))
+	         	// 		{
+	         	// 			too_close = true;
+           //        cout << "Found a vehicle too close!!!!  = " << car_speed << endl;
+	         	// 		}	         			
+         		// 	}
+         		// }
 
-            if(too_close)
-            {
-              ref_v -= v_adj;
-              cout << "Decreasing Speed to "<< ref_v << "." << endl;
-            }
-            else if(ref_v < speed_limit)
-            {
-              ref_v += v_adj;
-              cout << "Increasing Speed to "<< ref_v << "." << endl;
-            }
-
-
-         		/* Generate Spline for Path*/
-
-          	vector<double> ptsy;
-          	vector<double> ptsx;
-
-            double spline_starting_x;
-            double spline_starting_y;
+           //  if(too_close)
+           //  {
+           //    ref_v -= v_adj;
+           //    cout << "Decreasing Speed to "<< ref_v << "." << endl;
+           //  }
+           //  else if(ref_v < speed_limit)
+           //  {
+           //    ref_v += v_adj;
+           //    cout << "Increasing Speed to "<< ref_v << "." << endl;
+           //  }
 
 
-          	// If previous size is almost empty, estimate the previous
-          	// 2 way points based on vehicle orientation
-          	if (prev_size <2)
-          	{
-              ref_yaw = deg2rad(car_yaw);
-          		double prev_car_x = car_x - cos(ref_yaw);
-          		double prev_car_y = car_y - sin(ref_yaw);
+         		// /* Generate Spline for Path*/
 
-          		ptsx.push_back(prev_car_x);
-          		ptsx.push_back(car_x);
+       //    	vector<double> ptsy;
+       //    	vector<double> ptsx;
 
-          		ptsy.push_back(prev_car_y);
-          		ptsy.push_back(car_y);
-
-              spline_starting_x = prev_car_x;
-              spline_starting_y = prev_car_y;
-
-              ref_x = car_x;
-              ref_y = car_y;       
-          	}           
+       //      double spline_starting_x;
+       //      double spline_starting_y;
 
 
-            else //Use the previous path's ending points as the starting point
-          	{
-          		//redefine reference state as the end of the previous point array
-          		ref_x = previous_path_x[keep_points-1];
-          		ref_y = previous_path_y[keep_points-1];
-          		ref_x_prev = previous_path_x[keep_points-2];
-          		ref_y_prev = previous_path_y[keep_points-2];
+       //    	// If previous size is almost empty, estimate the previous
+       //    	// 2 way points based on vehicle orientation
+       //    	if (prev_size <2)
+       //    	{
+       //        ref_yaw = deg2rad(car_yaw);
+       //    		double prev_car_x = car_x - cos(ref_yaw);
+       //    		double prev_car_y = car_y - sin(ref_yaw);
 
-              spline_starting_x = ref_x_prev;
-              spline_starting_y = ref_y_prev;
+       //    		ptsx.push_back(prev_car_x);
+       //    		ptsx.push_back(car_x);
 
-          		ref_yaw = atan2(ref_y - ref_y_prev, ref_x - ref_x_prev);
+       //    		ptsy.push_back(prev_car_y);
+       //    		ptsy.push_back(car_y);
 
-          		ptsx.push_back(ref_x_prev);
-          		ptsx.push_back(ref_x);
+       //        spline_starting_x = prev_car_x;
+       //        spline_starting_y = prev_car_y;
 
-          		ptsy.push_back(ref_y_prev);
-          		ptsy.push_back(ref_y);
-          	}
+       //        ref_x = car_x;
+       //        ref_y = car_y;       
+       //    	}           
 
-          	//Get waypoints up the road to generate spline
-          	vector<double> next_wp0 = getXY(car_s + 30, 2+4*ego_lane , map_waypoints_s, map_waypoints_x, map_waypoints_y);
-          	vector<double> next_wp1 = getXY(car_s + 60, 2+4*ego_lane , map_waypoints_s, map_waypoints_x, map_waypoints_y);
-          	vector<double> next_wp2 = getXY(car_s + 90, 2+4*ego_lane , map_waypoints_s, map_waypoints_x, map_waypoints_y);
 
-          	ptsx.push_back(next_wp0[0]);
-          	ptsx.push_back(next_wp1[0]);
-          	ptsx.push_back(next_wp2[0]);
+       //      else //Use the previous path's ending points as the starting point
+       //    	{
+       //    		//redefine reference state as the end of the previous point array
+       //    		ref_x = previous_path_x[keep_points-1];
+       //    		ref_y = previous_path_y[keep_points-1];
+       //    		ref_x_prev = previous_path_x[keep_points-2];
+       //    		ref_y_prev = previous_path_y[keep_points-2];
 
-          	ptsy.push_back(next_wp0[1]);
-          	ptsy.push_back(next_wp1[1]);
-          	ptsy.push_back(next_wp2[1]);
+       //        spline_starting_x = ref_x_prev;
+       //        spline_starting_y = ref_y_prev;
 
-            if(displayPoints){
-              //Print Global Spline Waypoints
-              cout << "Global Spline Waypoints: " << endl;
-              for (int i = 0 ; i < ptsx.size(); i++)
-              {
-                //print Global Spline Waypoints :
-                cout << "\t[ " << ptsx[i] << "," << ptsy[i] << " ]" << endl;
-              }
-              cout << endl;
-            }
-          	// Transform to local coordinates by setting the origin to the start of the spline path
-          	for (int i = 0 ; i < ptsx.size(); i++)
-          	{
-          		double shift_x = ptsx[i] - spline_starting_x;
-          		double shift_y = ptsy[i] - spline_starting_y;
+       //    		ref_yaw = atan2(ref_y - ref_y_prev, ref_x - ref_x_prev);
 
-          		ptsx[i] = (shift_x * cos(0 - ref_yaw) - shift_y * sin(0- ref_yaw));
-          		ptsy[i] = (shift_x * sin(0 - ref_yaw) + shift_y * cos(0- ref_yaw)); 
-          	}
+       //    		ptsx.push_back(ref_x_prev);
+       //    		ptsx.push_back(ref_x);
+
+       //    		ptsy.push_back(ref_y_prev);
+       //    		ptsy.push_back(ref_y);
+       //    	}
+
+       //    	//Get waypoints up the road to generate spline
+       //    	vector<double> next_wp0 = getXY(car_s + 30, 2+4*ego_lane , map_waypoints_s, map_waypoints_x, map_waypoints_y);
+       //    	vector<double> next_wp1 = getXY(car_s + 60, 2+4*ego_lane , map_waypoints_s, map_waypoints_x, map_waypoints_y);
+       //    	vector<double> next_wp2 = getXY(car_s + 90, 2+4*ego_lane , map_waypoints_s, map_waypoints_x, map_waypoints_y);
+
+       //    	ptsx.push_back(next_wp0[0]);
+       //    	ptsx.push_back(next_wp1[0]);
+       //    	ptsx.push_back(next_wp2[0]);
+
+       //    	ptsy.push_back(next_wp0[1]);
+       //    	ptsy.push_back(next_wp1[1]);
+       //    	ptsy.push_back(next_wp2[1]);
+
+       //      if(displayPoints){
+       //        //Print Global Spline Waypoints
+       //        cout << "Global Spline Waypoints: " << endl;
+       //        for (int i = 0 ; i < ptsx.size(); i++)
+       //        {
+       //          //print Global Spline Waypoints :
+       //          cout << "\t[ " << ptsx[i] << "," << ptsy[i] << " ]" << endl;
+       //        }
+       //        cout << endl;
+       //      }
+       //    	// Transform to local coordinates by setting the origin to the start of the spline path
+       //    	for (int i = 0 ; i < ptsx.size(); i++)
+       //    	{
+       //    		double shift_x = ptsx[i] - spline_starting_x;
+       //    		double shift_y = ptsy[i] - spline_starting_y;
+
+       //    		ptsx[i] = (shift_x * cos(0 - ref_yaw) - shift_y * sin(0- ref_yaw));
+       //    		ptsy[i] = (shift_x * sin(0 - ref_yaw) + shift_y * cos(0- ref_yaw)); 
+       //    	}
             
             
-            if(displayPoints){
-              //Print Local Spline Waypoints
-              cout << "Local Spline Waypoints: " <<endl;
-              for (int i = 0 ; i < ptsx.size(); i++)
-              {
-                //print spline waypoints Global:
-                cout << "\t[" << ptsx[i] << "," << ptsy[i] << "]" << endl;
-              }
-              cout << endl;
-            }
+       //      if(displayPoints){
+       //        //Print Local Spline Waypoints
+       //        cout << "Local Spline Waypoints: " <<endl;
+       //        for (int i = 0 ; i < ptsx.size(); i++)
+       //        {
+       //          //print spline waypoints Global:
+       //          cout << "\t[" << ptsx[i] << "," << ptsy[i] << "]" << endl;
+       //        }
+       //        cout << endl;
+       //      }
 
-          	//Create spline that maps to lane path
-          	tk::spline s;
-          	s.set_points(ptsx,ptsy);
-
-
+       //    	//Create spline that maps to lane path
+       //    	tk::spline s;
+       //    	s.set_points(ptsx,ptsy);
 
 
-          	/* Write to the output points */
 
 
-            //Figure out how many new points to add :
-            points_to_add = total_points - min(keep_points,prev_size);
+       //    	/* Write to the output points */
 
 
-        		// Push the old values if there are any, defined by keep_points
-        		int i;  
-            cout << "\nAdding " << min(prev_size,keep_points) <<" points from previous path:" <<endl;
+       //  		// Push the old values if there are any, defined by keep_points
+       //  		int i;  
+       //      cout << "\nAdding " << min(prev_size,keep_points) <<" points from previous path:" <<endl;
 
-          	for (i = 0; i < min(prev_size,keep_points); i++)
-          	{
-        			next_x_vals.push_back(previous_path_x[i]);
-							next_y_vals.push_back(previous_path_y[i]);
-             if(displayPoints){cout << "\t Adding Previous Point = [" << previous_path_x[i] << " , " << previous_path_y[i] <<"]" << endl;}
-          	}
-            cout << "Done Adding points from previous path.\n" <<endl;  
-
-
-          	//Generate new points:
-
-          	double local_x_coord = 0;
-          	double local_y_coord = 0;
-            double global_x_coord = 0;
-            double global_y_coord = 0;
+       //    	for (i = 0; i < min(prev_size,keep_points); i++)
+       //    	{
+       //  			next_x_vals.push_back(previous_path_x[i]);
+							// next_y_vals.push_back(previous_path_y[i]);
+       //       if(displayPoints){cout << "\t Adding Previous Point = [" << previous_path_x[i] << " , " << previous_path_y[i] <<"]" << endl;}
+       //    	}
+       //      cout << "Done Adding points from previous path.\n" <<endl;  
 
 
-          	//Compute longitudinal increment based on reference speed & simulator physics
-          	double x_inc = ref_v*0.02/(2.237);
+       //    	//Generate new points:
+
+       //    	double local_x_coord = 0;
+       //    	double local_y_coord = 0;
+       //      double global_x_coord = 0;
+       //      double global_y_coord = 0;
+
+
+       //    	//Compute longitudinal increment based on reference speed & simulator physics
+       //    	double x_inc = ref_v*0.02/(2.237);
           	
-            cout << "\nGenerating "<<  total_points - min(keep_points,prev_size)  <<  " Points for Future Vehicle Path:" <<endl;
+       //      cout << "\nGenerating "<<  total_points - min(keep_points,prev_size)  <<  " Points for Future Vehicle Path:" <<endl;
 
-          	for (i = 0; i < total_points - min(keep_points,prev_size); i ++)
-        		{
-        			//Local (x,y) coordinate for point
-        			local_x_coord += x_inc;
-        			local_y_coord = s(local_x_coord); //Generate spline value
-              if(displayPoints){cout << "\tLocal = [" << local_x_coord <<" , " << local_y_coord <<"] , ";}
+       //    	for (i = 0; i < total_points - min(keep_points,prev_size); i ++)
+       //  		{
+       //  			//Local (x,y) coordinate for point
+       //  			local_x_coord += x_inc;
+       //  			local_y_coord = s(local_x_coord); //Generate spline value
+       //        if(displayPoints){cout << "\tLocal = [" << local_x_coord <<" , " << local_y_coord <<"] , ";}
 
-        			//Convert local coordinates back to global:
-        			double x_ref = local_x_coord;
-        			double y_ref = local_y_coord;
+       //  			//Convert local coordinates back to global:
+       //  			double x_ref = local_x_coord;
+       //  			double y_ref = local_y_coord;
 
-        			global_x_coord = (x_ref * cos(ref_yaw) - y_ref * sin(ref_yaw));
-        			global_y_coord = (x_ref * sin(ref_yaw) + y_ref*cos(ref_yaw));
+       //  			global_x_coord = (x_ref * cos(ref_yaw) - y_ref * sin(ref_yaw));
+       //  			global_y_coord = (x_ref * sin(ref_yaw) + y_ref*cos(ref_yaw));
 
-        			global_x_coord += ref_x;
-        			global_y_coord += ref_y;
+       //  			global_x_coord += ref_x;
+       //  			global_y_coord += ref_y;
 
-        			next_x_vals.push_back(global_x_coord);
-							next_y_vals.push_back(global_y_coord);  
+       //  			next_x_vals.push_back(global_x_coord);
+							// next_y_vals.push_back(global_y_coord);  
               		
-              if(displayPoints){cout << "Global = [" << global_x_coord <<" , " << global_y_coord <<"] " <<  endl;}
-          	}
-             cout << "Done Generating New Points.\n" <<endl;  
+       //        if(displayPoints){cout << "Global = [" << global_x_coord <<" , " << global_y_coord <<"] " <<  endl;}
+       //    	}
+       //       cout << "Done Generating New Points.\n" <<endl;  
           	
-          	json msgJson;
-          	msgJson["next_x"] = next_x_vals;
-          	msgJson["next_y"] = next_y_vals;
+
+
+            
+          	// json msgJson;
+          	// msgJson["next_x"] = next_x_vals;
+          	// msgJson["next_y"] = next_y_vals;
 
           	auto msg = "42[\"control\","+ msgJson.dump()+"]";
 
@@ -540,150 +580,3 @@ int main() {
   }
   h.run();
 }
-
-
-          	/*
-          	uint lane = 1; //lane 0 = left, 1 = center, 2 = right
-          	double ref_v = 50; // reference velocity
-          	uint max_speed = 48;
-          	uint num_points = 50;	
-          	bool too_close = false;
-
-          	// Collision Avoidance Logic:
-
-         		int id,x,y,vx,vy,sf,dist;
-         		//cout << "id's val's = ";
-         		for ( int i = 0; i <sensor_fusion.size();i++)
-         		{
-
-         			double d = sensor_fusion[i][6];
-
-
-         			//Determine if vehicle is in ego lane
-         			if(d <(4+ 4*lane) && d > (4*lane))
-         			{
-	         			double vx = sensor_fusion[i][3];
-	         			double vy = sensor_fusion[i][4];
-	         			double check_speed = sqrt(vx*vx + vy*vy);
-	         			double check_s = sensor_fusion[i][5];
-
-	         			if (check_s - car_s < 30) 
-	         			{
-	         				too_close = true;
-
-	         			}
-         			}
-         		}
-
-         		if(false)
-         		{
-         			ref_v -= .224;
-         			cout << "Decreasing Speed!\n";
-         		}
-         		else if (ref_v < max_speed)
-         		{
-         			ref_v+=0.224;
-         			cout << "Increasing Speed!\n";
-         		}
-
-
-          	vector<double> ptsx;
-          	vector<double> ptsy;
-
-          	int prev_size = previous_path_x.size();
-
-          	//either reference the starting point as current car location or at the previous path's end point
-          	double ref_x = car_x;
-          	double ref_y = car_y;
-          	double ref_yaw = deg2rad(car_yaw);
-
-          	//If previous size is almost empty, estimate the previous 2 way points
-          	if (prev_size <2)
-          	{
-          		double prev_car_x = car_x - cos(car_yaw);
-          		double prev_car_y = car_y - sin(car_yaw);
-
-          		ptsx.push_back(prev_car_x);
-          		ptsx.push_back(car_x);
-
-
-          		ptsy.push_back(prev_car_y);
-          		ptsy.push_back(car_y);
-          	}
-
-          	else //Use the previous path's end point as the starting point
-          	{
-          		//redefine reference state as the end of the last simulation cycle
-          		ref_x = previous_path_x[prev_size-1];
-          		ref_y = previous_path_y[prev_size-1];
-
-
-          		double ref_x_prev = previous_path_x[prev_size-2];
-          		double ref_y_prev = previous_path_y[prev_size-2];
-
-          		ref_yaw = atan2(ref_y - ref_y_prev, ref_x - ref_x_prev);
-
-          		ptsx.push_back(ref_x_prev);
-          		ptsx.push_back(ref_x);
-
-
-          		ptsy.push_back(ref_y_prev);
-          		ptsy.push_back(ref_y);
-          	}
-
-          	vector<double> next_wp0 = getXY(car_s + 30, 2+4*lane , map_waypoints_s, map_waypoints_x, map_waypoints_y);
-          	vector<double> next_wp1 = getXY(car_s + 60, 2+4*lane , map_waypoints_s, map_waypoints_x, map_waypoints_y);
-          	vector<double> next_wp2 = getXY(car_s + 90, 2+4*lane , map_waypoints_s, map_waypoints_x, map_waypoints_y);
-
-          	ptsx.push_back(next_wp0[0]);
-          	ptsx.push_back(next_wp1[0]);
-          	ptsx.push_back(next_wp2[0]);
-
-          	ptsy.push_back(next_wp0[1]);
-          	ptsy.push_back(next_wp1[1]);
-          	ptsy.push_back(next_wp2[1]);
-
-
-          	//Transform to local cars coordinates
-          	//Set the origin to the current vehicle position
-          	for (int i = 0 ; i < ptsx.size(); i++)
-          	{
-          		double shift_x = ptsx[i] - ref_x;
-
-          		double shift_y = ptsy[i] - ref_y;
-
-          		ptsx[i] = (shift_x * cos(0 - ref_yaw) - shift_y * sin(0- ref_yaw));
-          		ptsy[i] = (shift_x * sin(0 - ref_yaw) + shift_y * cos(0-ref_yaw)); 
-          	}
-
-          	//Create spline that maps to lane path
-          	tk::spline s;
-          	s.set_points(ptsx,ptsy);
-
-
-
-						
-
-						int previous_size = 0;
-          	//Re-use left over points that were not executed last time step
-          	for (int i = 0; i < previous_size;i++)
-          	{
-          		next_x_vals.push_back(previous_path_x[i]);
-          		next_y_vals.push_back(previous_path_y[i]);
-          	}
-          	
-          	//use a linear approximation to genereate spline x-axis:
-          	double target_x = 30 ;
-          	double target_y = s(target_x);
-          	double target_dist = sqrt((target_x*target_x + target_y *target_y));
-
-          	//Compute spacing of points required to acheive target speed
-
-          	double N = (target_dist*2.24/(0.02*ref_v));
-          	//double x_inc = target_x / N;
-          	double x_inc = ref_v*0.02/(2.237);
-          	double x_add = 0;
-          	int i;
-          	//Add on new points to the end
-
-*/			
