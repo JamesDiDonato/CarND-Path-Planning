@@ -59,15 +59,12 @@ class Vehicle
   		vector<State> possible_future_states;
 
   		vector < vector<double> >  sensor_fusion;
-
 		State current_state;
 
 		bool displayPoints;
 		double speed_limit; //speed limit in mph
 		double total_points; // Total # of points to keep       	       	
 		double keep_points;   //Number of points to include from previous path
-		double v_adj; //Speed to adjust each iteration by	
-
 
  
  		// Spline object representing trajectory
@@ -82,6 +79,7 @@ class Vehicle
         double ref_yaw;         
 
 		Lane ego_lane;
+		Lane target_lane;
 		double ref_v;
 		bool too_close;	
 
@@ -98,8 +96,9 @@ class Vehicle
 		double rad2deg(double x) { return x * 180 / M_PI; }
 
 
-		double computeOffCenterCost(State a);
-		double computeRearEndCollisionCost();
+		double OffCenterCost(State a);
+		double RearEndCollisionCost(State a);
+		double OpenLaneCost(State a);
 		string StatetoString(State a);
 		string LanetoString(Lane a);
 		

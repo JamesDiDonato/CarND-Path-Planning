@@ -255,10 +255,11 @@ int main() {
           	//Sensor Fusion Format : [ id, x, y, vx, vy, s, d]
 
             cout << "***** Start of Iteration*****" <<endl;  
+            cout << endl;
 
             // PROJECT CODE BEGINS: 
 
-            //Update Ego Vehicle Object from simulator:
+            //Update Ego Vehicle with data  from simulator:
             ego.x = car_x;
             ego.y = car_y;
             ego.s = car_s;
@@ -273,9 +274,6 @@ int main() {
 
             ego.GetSuccessorStates();
 
-
-
-
             ego.StateTransition();
 
             ego.UpdateSpeed();
@@ -287,6 +285,7 @@ int main() {
             msgJson["next_x"] = ego.next_x_vals;
             msgJson["next_y"] = ego.next_y_vals;
             
+            cout << "ego.next_x_vals.size() = "<< ego.next_x_vals.size() <<endl;  
             cout << "\n***** End of Iteration*****\n" <<endl;  
             
            //  // Old Code (pre Vehicle object commit)
