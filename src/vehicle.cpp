@@ -11,20 +11,19 @@ Vehicle::~Vehicle() {}
 
 Vehicle::Vehicle()
 {
-	displayPoints = true;
+	displayPoints = false;
 	speed_limit = 50; //speed limit in mph
-	total_points = 40 ; // Total # of points to keep       	       	
+	total_points = 60 ; // Total # of points to keep       	       	
 	keep_points = 30;   //Number of points to include from previous path
 
 	ego_lane = centerlane; // vehicle starts out in the center lane
 	target_lane = centerlane ;// vehicle starts out in the center lane
 
-	too_close = false;
-
-	//ref_v = speed;
 	ref_v = 2;
 
 	current_state = keep_lane;
+
+	sim_start = true;
 
 }
 /* 
@@ -46,28 +45,17 @@ void Vehicle::GetSuccessorStates()
 		switch(currentLane)//limit maneuvers based on where we are
 		{
 			case leftlane: //avoid oncoming traffic
-				possible_future_states.push_back(prep_lane_change_right); 
+				possible_future_states.push_back(lane_change_right); 
 				break;
 
 			case rightlane: //avoid off roading
-				possible_future_states.push_back(prep_lane_change_left); 
+				possible_future_states.push_back(lane_change_left); 
 				break;
 			case centerlane: //can go either way
-				possible_future_states.push_back(prep_lane_change_left);
-				possible_future_states.push_back(prep_lane_change_right);
+				possible_future_states.push_back(lane_change_left);
+				possible_future_states.push_back(lane_change_right);
 				break;
 		}
-	}
-	else if (current_state == prep_lane_change_right)
-	{
-		//possible_future_states.push_back(prep_lane_change_right);
-		//possible_future_states.push_back(keep_lane);
-	}
-
-	else if (current_state == prep_lane_change_left)
-	{
-		//possible_future_states.push_back(prep_lane_change_left);
-		//possible_future_states.push_back(keep_lane);
 	}
 
 	else if (current_state == lane_change_right)
@@ -99,11 +87,11 @@ double Vehicle::OffCenterCost(State a)
 			target_lane = GetCurrentLane();
 			break;
 
-		case prep_lane_change_right :
+		case lane_change_right :
 			target_lane = GetCurrentLane() + 1;
 			break;
 
-		case prep_lane_change_left:
+		case lane_change_left:
 			target_lane = GetCurrentLane() - 1;
 			break;
 	}
@@ -132,32 +120,20 @@ double Vehicle::RearEndCollisionCost(State a)
 		//Sensor Fusion Format : [ id, x, y, vx, vy, s, d]
 	
 		double sf,d_ext,dist_relative ;
+		double min_distance = GetInLaneThreat()[0]; // The closest in-lane vehicle distance away
 
-		double min_distance = distance_warning; // The closest in-lane vehicle distance away
-		
-		for ( int i = 0; i <sensor_fusion.size();i++)
-		{         			
-			d_ext = sensor_fusion[i][6];
-			sf = sensor_fusion[i][5];
-
-			//cout << "Checking Vehicle "<< sensor_fusion[i][0] << "."<< endl;
-			//Determine if vehicle is in ego lane
-			if(d_ext <(4+ 4*ego_lane) && d_ext > (4*ego_lane)) // Vehicle is in our lane
-			{
-
-				dist_relative = abs(sf - this->s);
-				if ( dist_relative < distance_warning && (sf > this->s)) //Check if within warning range & in front of ego
-				{
-					if (dist_relative < min_distance) //Check to see if this vehicle is the closest in-lane 
-					{
-						min_distance = dist_relative;
-					}
-				}	         			
-			}
+		if(min_distance < 16)  // We are too close to change lanes, wait for ACC to slow us down
+		{
+			return 0;
+		}
+		else
+		{
+			//Compute cost linearly proportional to closest in lane vehicle distance
+			return 1.5*(distance_warning - min(min_distance,distance_warning))/distance_warning;
 		}
 
-		//Compute cost linearly proportional to closest in lane vehicle distance
-		return (distance_warning - min_distance)/distance_warning;
+
+
 	}
 
 	else
@@ -176,7 +152,7 @@ double Vehicle::OpenLaneCost(State a)
 	{
 		double gap_front = 50;// Amount of space ahead ego to include in gap, in m
 
-		double gap_back = -5; // Amount of space behind ego to include in gap, in m
+		double gap_back = -7.5; // Amount of space behind ego to include in gap, in m
 		double sf,d_ext,gap_size, dist_to_ego;
 
 		double min_gap_size = gap_front - gap_back;
@@ -184,7 +160,7 @@ double Vehicle::OpenLaneCost(State a)
 
 		//Compute the size of the gap for both lane change states
 
-		if(a == prep_lane_change_right)
+		if(a == lane_change_right)
 		{
 			//Compute the smallest gap size in the right lane
 			for ( int i = 0; i <sensor_fusion.size();i++)
@@ -210,7 +186,7 @@ double Vehicle::OpenLaneCost(State a)
 				}
 			}				
 		}
-		else if (a == prep_lane_change_left)
+		else if (a == lane_change_left)
 		{
 			//Compute the smallest gap size in the left lane
 			for ( int i = 0; i <sensor_fusion.size();i++)
@@ -237,8 +213,8 @@ double Vehicle::OpenLaneCost(State a)
 				}
 			}		
 		}
-		//The cost gets worse the closet the vehicle gets to gap_back [m] from ego.
-		return (gap_front - gap_back - min_gap_size)/(gap_front - gap_back);
+		//The cost gets worse the closer the vehicle gets to gap_back [m] from ego.
+		return 2*(gap_front - gap_back - min_gap_size)/(gap_front - gap_back);
 	}
 
 
@@ -251,8 +227,8 @@ double Vehicle::OpenLaneCost(State a)
 void Vehicle::StateTransition()
 {	
 
-	//State transition occurs once the vehicle has successfully entered lane
-	if(current_state == prep_lane_change_right)
+	//State transition occurs once the vehicle has successfully entered the right lane
+	if(current_state == lane_change_right)
 	{
 		target_lane = (Lane)((int)ego_lane + 1);
 
@@ -263,8 +239,8 @@ void Vehicle::StateTransition()
 			ego_lane = target_lane;
 		}
 	}
-
-	else if (current_state == prep_lane_change_left)
+	//State transition occurs once the vehicle has successfully entered the left lane
+	else if (current_state == lane_change_left)
 	{
 		target_lane = (Lane)((int)ego_lane - 1);
 
@@ -276,7 +252,7 @@ void Vehicle::StateTransition()
 		}
 	}
 
-	//For each possible state transition, compute the associated cost
+	//For each possible state transition out of "keep_lane" compute the associated cost
 	else
 	{
 		vector<double> costs;
@@ -285,8 +261,7 @@ void Vehicle::StateTransition()
 		cout << "Possible future states:" << endl;
 		cout << "\t" << "State________________" <<"\t" <<"OffC"<<"\t" <<"RE" <<"\t" <<"OL" <<"\t" << "Tot" << endl;
 		for (int i = 0 ; i < possible_future_states.size();i++)
-		{
-			
+		{			
 			//For each possible state, compute the associated costs:
 			cout<< "\t" << StatetoString(possible_future_states[i]);
 
@@ -301,6 +276,7 @@ void Vehicle::StateTransition()
 			cout<< "\t" << round(100*(c1+c2+c3))/100.0 <<endl;
 			
 			costs.push_back(c1+c2+c3);
+			//costs.push_back(c1+c3); //Uncomment this line to avoid changing lanes
 		}
 
 		// Decide on next state based on the lowest cost:
@@ -316,42 +292,11 @@ void Vehicle::StateTransition()
 
 		cout << "Next State = " << StatetoString(current_state) << endl;
 	}
-/*
-  for state in possible_successor_states:
-        # generate a rough idea of what trajectory we would
-        # follow IF we chose this state.
-        trajectory_for_state = generate_trajectory(state, current_pose, predictions)
-
-
-       # calculate the "cost" associated with that trajectory.
-        cost_for_state = 0
-        for i in range(len(cost_functions)) :
-            # apply each cost function to the generated trajectory
-            cost_function = cost_functions[i]
-            cost_for_cost_function = cost_function(trajectory_for_state, predictions)
-
-            # multiply the cost by the associated weight
-            weight = weights[i]
-            cost_for_state += weight * cost_for_cost_function
-         costs.append({'state' : state, 'cost' : cost_for_state})
-
-    # Find the minimum cost state.
-    best_next_state = None
-    min_cost = 9999999
-    for i in range(len(possible_successor_states)):
-        state = possible_successor_states[i]
-        cost  = costs[i]
-        if cost < min_cost:
-            min_cost = cost
-            best_next_state = state 
-
-    return best_next_state
-*/
-
 }
 
 /* 
-* Generates the Trajectory using spline.h, targeted lane, targeted speed.
+* Generates the Trajectory for the current_lane.
+* Uses spline.h, targeted lane, targeted speed.
 */
 void Vehicle::GenerateTrajectory()
 {
@@ -510,7 +455,7 @@ void Vehicle::GenerateTrajectory()
 		global_y_coord += ref_y;
 
 		next_x_vals.push_back(global_x_coord);
-		next_y_vals.push_back(global_y_coord);  
+		next_y_vals.push_back(global_y_coord);
 
 		if(displayPoints)
 		{
@@ -569,17 +514,115 @@ Lane Vehicle::GetCurrentLane()
 	}
 }
 
-void Vehicle::UpdateSpeed()
-{
-	//Throttle the amount of speed to add based on how close we are to speed limit
-	double start_add = 1.2;
-	double end_add = 0;
-	double speed_add=  speed * (end_add - start_add)/(speed_limit - 3) + start_add;
-	ref_v += speed_add;
 
-	//if(ref_v > 45){ego_lane = leftlane;}
+/*
+* This funtion implements adaptive cruise control by using the sensor fusion data and speed limit to set the 
+* reference velocity for the trajectory generator
+*/
+void Vehicle::AdaptiveCruise()
+{
+
+	double holding_distance = 20;
+	double start_slowing = 40;
+	
+	double error;
+	double p;
+	double rate = 0;
+
+	double min_distance = GetInLaneThreat()[0];
+	double vehicle_speed = GetInLaneThreat()[1];
+	cout<< "SimStart = "<<  sim_start<<". Distance to next vehicle   = " << min_distance <<". Travelling at "<< vehicle_speed<< endl;
+	
+
+	if(sim_start) //We are just getting up to speed
+	{
+		rate = 1;
+		ref_v += rate;
+		if(ref_v > (speed_limit -5)){sim_start = false; }
+	}
+
+	else
+	{
+
+		if(false){ref_v = speed_limit -3; } //stop increasing beyond speed limit
+
+		else
+		{	
+
+			if (current_state != keep_lane) // Tap the throttle when changing lanes
+			{
+				rate = 1;
+				ref_v = min(ref_v + rate, speed_limit-2);
+			}
+			
+			else if (min_distance < holding_distance)
+			{
+				//USE PID controller to slow car
+				error = (min_distance - holding_distance);
+				p = 0.05;
+				rate = min(1.0,p*error); //cap the rate at 1.0 to keep acc and jerk < 10 
+				ref_v = min(ref_v + rate, speed_limit-2);
+			}
+			else if (min_distance < start_slowing )
+			{
+				error = (min_distance - start_slowing);
+				p = 0.005;
+				rate = min(1.0,p*error); //cap the rate at 1.0 to keep acc and jerk < 10 
+				
+				ref_v = min(ref_v + rate, speed_limit-2);
+			}
+
+			else  if ( min_distance > start_slowing)// vehicle is further enough away we can accelerate.
+			{
+				rate = 0.25; //cap the rate at 1.0 to keep acc and jerk < 10 
+				ref_v = min(ref_v + rate, speed_limit-2);
+			}
+
+		}
+
+	}
+	cout<< "Speed rate= " << rate <<endl;
+}
+
+/*
+* This function searches the sensor fusion array and extracts the closest vehicle ahead of ego in the same lane
+* returns the distance and speed 
+*/
+vector<double> Vehicle::GetInLaneThreat()
+{
+	double d_ext,sf,dist_relative,vehicle_speed,min_distance = 100;
+
+	// Front Radar,extract high threat vehicle in same lane:
+	for ( int i = 0; i <sensor_fusion.size();i++)
+	{         			
+		//Sensor Fusion Format : [ id, x, y, vx, vy, s, d]
+		d_ext = sensor_fusion[i][6];
+		sf = sensor_fusion[i][5];
+
+
+		//Determine if vehicle is in our lane
+		if(d_ext <(4+ 4*ego_lane) && d_ext > (4*ego_lane))
+		{			
+			//Compute in-lane distance ahead
+			if(sf>this->s)
+			{
+				dist_relative = sf - this->s ;
+
+				if(dist_relative < min_distance)
+				{
+					min_distance = dist_relative;
+					vehicle_speed = sqrt(pow(sensor_fusion[i][3],2) + pow(sensor_fusion[i][4],2));					
+				}
+			}			
+		}
+	}
+	vector<double> out;
+	out.push_back (min_distance);
+	out.push_back (vehicle_speed);
+	return out;
 
 }
+
 
 string Vehicle::StatetoString(State a)
 {
@@ -587,12 +630,6 @@ string Vehicle::StatetoString(State a)
 	{
 		case keep_lane:
 			return "Keep Lane_____________";
-			break;
-		case prep_lane_change_right:
-			return "Prep Lane Change Right";
-			break;
-		case prep_lane_change_left:
-			return "Prep Lane Change Left";
 			break;
 		case lane_change_right:
 			return "Lane Change Right";

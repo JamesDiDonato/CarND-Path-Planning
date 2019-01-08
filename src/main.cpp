@@ -276,7 +276,7 @@ int main() {
 
             ego.StateTransition();
 
-            ego.UpdateSpeed();
+            ego.AdaptiveCruise();
 
             ego.GenerateTrajectory();
 
@@ -284,8 +284,6 @@ int main() {
             json msgJson;
             msgJson["next_x"] = ego.next_x_vals;
             msgJson["next_y"] = ego.next_y_vals;
-            
-            cout << "ego.next_x_vals.size() = "<< ego.next_x_vals.size() <<endl;  
             cout << "\n***** End of Iteration*****\n" <<endl;  
             
            //  // Old Code (pre Vehicle object commit)

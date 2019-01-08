@@ -17,10 +17,8 @@ using namespace tk;
 enum State
 { 
 	keep_lane = 0,
-	prep_lane_change_right = 1,
-	prep_lane_change_left = 2,
-	lane_change_right = 3,
-	lane_change_left = 4
+	lane_change_right = 1,
+	lane_change_left = 2
 };
 
 enum Lane
@@ -65,7 +63,6 @@ class Vehicle
 		double speed_limit; //speed limit in mph
 		double total_points; // Total # of points to keep       	       	
 		double keep_points;   //Number of points to include from previous path
-
  
  		// Spline object representing trajectory
         spline spl;
@@ -81,10 +78,10 @@ class Vehicle
 		Lane ego_lane;
 		Lane target_lane;
 		double ref_v;
-		bool too_close;	
+		bool sim_start;	
 
 		void GetSuccessorStates();
-		void UpdateSpeed();
+		void AdaptiveCruise();
 		void GenerateTrajectory();
 		void StateTransition();
 		Lane GetCurrentLane();
@@ -99,6 +96,7 @@ class Vehicle
 		double OffCenterCost(State a);
 		double RearEndCollisionCost(State a);
 		double OpenLaneCost(State a);
+		vector<double> GetInLaneThreat();
 		string StatetoString(State a);
 		string LanetoString(Lane a);
 		
