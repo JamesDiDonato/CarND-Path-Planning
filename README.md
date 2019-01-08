@@ -10,8 +10,8 @@ In this project the goal is to safely navigate a vehicle autonomously around a v
 
 [//]: # (Image References)
 
-[image1]: ./ReportImages/run1.png "Run1"
-[image2]: ./ReportImages/run2.png "Run2"
+[image1]: ./ReportImages/Run1.png "Run1"
+[image2]: ./ReportImages/Run2.png "Run2"
 [image3]: ./ReportImages/FSM.png "FSM"
 
 ## Reflection
