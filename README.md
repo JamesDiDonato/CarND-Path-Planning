@@ -12,7 +12,7 @@ In this project the goal is to safely navigate a vehicle autonomously around a v
 
 [image1]: ./ReportImages/Run1.png "Run1"
 [image2]: ./ReportImages/Run2.png "Run2"
-[image3]: ./ReportImages/FSM.png "FSM"
+[image3]: ./ReportImages/fsm.png "FSM"
 
 ## Reflection
 
