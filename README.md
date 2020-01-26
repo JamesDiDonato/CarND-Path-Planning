@@ -1,6 +1,7 @@
-# CarND-Path-Planning
-## James DiDonato
-### Udacity Self Driving Car Engineer Nanodegree - January 2019
+# **Vehicle Path Planning** 
+
+### Completed for Udacity Self Driving Car Engineer - 2019/01
+---
 
 
 This project was completed as part of my enrollment in the  Self Driving Car Engineer Nanodegree from Udacity.
